@@ -95,16 +95,30 @@ async def get_mcp_tools() -> list[BaseTool]:
         if oauth_interceptor is not None:
             tool_interceptors.append(oauth_interceptor)
 
-        client = MultiServerMCPClient(servers_config, tool_interceptors=tool_interceptors, tool_name_prefix=True)
-
-        # Get all tools from all servers
-        tools = await client.get_tools()
-        logger.info(f"Successfully loaded {len(tools)} tool(s) from MCP servers")
-        
-        # Patch tools to support sync invocation, as deerflow client streams synchronously
-        for tool in tools:
-            if getattr(tool, "func", None) is None and getattr(tool, "coroutine", None) is not None:
-                tool.func = _make_sync_tool_wrapper(tool.coroutine, tool.name)
+        # Load each server independently so one failure doesn't affect others.
+        # MultiServerMCPClient uses asyncio.gather internally which is all-or-nothing.
+        server_groups = {name: cfg.group for name, cfg in extensions_config.mcp_servers.items() if cfg.group}
+        tools: list[BaseTool] = []
+        for server_name, server_cfg in servers_config.items():
+            try:
+                single_client = MultiServerMCPClient(
+                    {server_name: server_cfg},
+                    tool_interceptors=tool_interceptors,
+                    tool_name_prefix=True,
+                )
+                server_tools = await single_client.get_tools()
+                # Tag tools with server group and patch sync wrapper while we know the server name
+                group = server_groups.get(server_name)
+                for tool in server_tools:
+                    if getattr(tool, "func", None) is None and getattr(tool, "coroutine", None) is not None:
+                        tool.func = _make_sync_tool_wrapper(tool.coroutine, tool.name)
+                    if group:
+                        tool.metadata = {**(tool.metadata or {}), "group": group}
+                tools.extend(server_tools)
+                logger.info(f"Loaded {len(server_tools)} tool(s) from MCP server '{server_name}'")
+            except Exception as e:
+                logger.warning(f"Failed to load MCP server '{server_name}': {e}")
+        logger.info(f"Successfully loaded {len(tools)} tool(s) from MCP servers total")
 
         return tools
 

@@ -2,6 +2,18 @@ from datetime import datetime
 
 from deerflow.config.agents_config import load_agent_soul
 from deerflow.skills import load_skills
+from deerflow.subagents.registry import list_subagents
+
+
+def _build_available_subagents_section() -> str:
+    """Build the dynamic list of available subagent types for the system prompt."""
+    subagents = list_subagents()
+    lines = []
+    for sa in subagents:
+        # Use first line of description only
+        desc = sa.description.split("\n")[0] if sa.description else sa.name
+        lines.append(f"- **{sa.name}**: {desc}")
+    return "\n".join(lines)
 
 
 def _build_subagent_section(max_concurrent: int) -> str:
@@ -14,6 +26,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
         Formatted subagent section string.
     """
     n = max_concurrent
+    available_subagents = _build_available_subagents_section()
     return f"""<subagent_system>
 **🚀 SUBAGENT MODE ACTIVE - DECOMPOSE, DELEGATE, SYNTHESIZE**
 
@@ -37,8 +50,7 @@ You are running with subagent capabilities enabled. Your role is to be a **task 
 - **Example thinking pattern**: "I identified 6 sub-tasks. Since the limit is {n} per turn, I will launch the first {n} now, and the rest in the next turn."
 
 **Available Subagents:**
-- **general-purpose**: For ANY non-trivial task - web research, code exploration, file operations, analysis, etc.
-- **bash**: For command execution (git, build, test, deploy operations)
+{available_subagents}
 
 **Your Orchestration Strategy:**
 

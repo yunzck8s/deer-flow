@@ -4,7 +4,7 @@ import logging
 import time
 import uuid
 from dataclasses import replace
-from typing import Annotated, Literal
+from typing import Annotated
 
 from langchain.tools import InjectedToolCallId, ToolRuntime, tool
 from langgraph.config import get_stream_writer
@@ -23,7 +23,7 @@ def task_tool(
     runtime: ToolRuntime[ContextT, ThreadState],
     description: str,
     prompt: str,
-    subagent_type: Literal["general-purpose", "bash"],
+    subagent_type: str,
     tool_call_id: Annotated[str, InjectedToolCallId],
     max_turns: int | None = None,
 ) -> str:
@@ -34,12 +34,9 @@ def task_tool(
     - Handle complex multi-step tasks autonomously
     - Execute commands or operations in isolated contexts
 
-    Available subagent types:
-    - **general-purpose**: A capable agent for complex, multi-step tasks that require
-      both exploration and action. Use when the task requires complex reasoning,
-      multiple dependent steps, or would benefit from isolated context.
-    - **bash**: Command execution specialist for running bash commands. Use for
-      git operations, build processes, or when command output would be verbose.
+    Available subagent types include built-in agents (general-purpose, bash) and any
+    custom agents defined in ~/.deer-flow/agents/. Check the system prompt for the
+    full list of available subagent types and their descriptions.
 
     When to use this tool:
     - Complex tasks requiring multiple steps or tools
@@ -54,13 +51,16 @@ def task_tool(
     Args:
         description: A short (3-5 word) description of the task for logging/display. ALWAYS PROVIDE THIS PARAMETER FIRST.
         prompt: The task description for the subagent. Be specific and clear about what needs to be done. ALWAYS PROVIDE THIS PARAMETER SECOND.
-        subagent_type: The type of subagent to use. ALWAYS PROVIDE THIS PARAMETER THIRD.
+        subagent_type: The type of subagent to use (built-in or custom agent name). ALWAYS PROVIDE THIS PARAMETER THIRD.
         max_turns: Optional maximum number of agent turns. Defaults to subagent's configured max.
     """
     # Get subagent configuration
     config = get_subagent_config(subagent_type)
     if config is None:
-        return f"Error: Unknown subagent type '{subagent_type}'. Available: general-purpose, bash"
+        from deerflow.subagents.registry import get_subagent_names
+
+        available = ", ".join(get_subagent_names())
+        return f"Error: Unknown subagent type '{subagent_type}'. Available: {available}"
 
     # Build config overrides
     overrides: dict = {}
@@ -99,7 +99,8 @@ def task_tool(
     from deerflow.tools import get_available_tools
 
     # Subagents should not have subagent tools enabled (prevent recursive nesting)
-    tools = get_available_tools(model_name=parent_model, subagent_enabled=False)
+    # Pass tool_groups from config to filter tools for custom subagents
+    tools = get_available_tools(model_name=parent_model, subagent_enabled=False, groups=config.tool_groups)
 
     # Create executor
     executor = SubagentExecutor(

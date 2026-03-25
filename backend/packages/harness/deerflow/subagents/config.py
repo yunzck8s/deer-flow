@@ -16,6 +16,7 @@ class SubagentConfig:
         model: Model to use - 'inherit' uses parent's model.
         max_turns: Maximum number of agent turns before stopping.
         timeout_seconds: Maximum execution time in seconds (default: 900 = 15 minutes).
+        tool_groups: Optional list of tool groups to filter by. If None, inherits all tools.
     """
 
     name: str
@@ -26,3 +27,4 @@ class SubagentConfig:
     model: str = "inherit"
     max_turns: int = 50
     timeout_seconds: int = 900
+    tool_groups: list[str] | None = None

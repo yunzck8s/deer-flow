@@ -43,6 +43,7 @@ class McpServerConfig(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict, description="HTTP headers to send (for sse or http type)")
     oauth: McpOAuthConfig | None = Field(default=None, description="OAuth configuration (for sse or http type)")
     description: str = Field(default="", description="Human-readable description of what this MCP server provides")
+    group: str | None = Field(default=None, description="Tool group for filtering (e.g. 'kubernetes', 'clickhouse')")
     model_config = ConfigDict(extra="allow")
 
 

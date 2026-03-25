@@ -97,5 +97,16 @@ def get_available_tools(
         except Exception as e:
             logger.error(f"Failed to get cached MCP tools: {e}")
 
+    # Filter MCP tools by group when groups are specified.
+    # Tools with a matching group are included. Tools without a group tag are
+    # preserved for backward compatibility (they predate group-based filtering).
+    if groups is not None and mcp_tools:
+        groups_set = set(groups)
+        mcp_tools = [
+            t for t in mcp_tools
+            if not (getattr(t, "metadata", None) and t.metadata.get("group"))
+            or (getattr(t, "metadata", None) and t.metadata.get("group") in groups_set)
+        ]
+
     logger.info(f"Total tools loaded: {len(loaded_tools)}, built-in tools: {len(builtin_tools)}, MCP tools: {len(mcp_tools)}")
     return loaded_tools + builtin_tools + mcp_tools

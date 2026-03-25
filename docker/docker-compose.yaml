@@ -82,6 +82,13 @@ services:
         read_only: true
         bind:
           create_host_path: true
+      # Kubeconfig for Kubernetes MCP server (optional, mount if using k8s tools)
+      - type: bind
+        source: ${KUBECONFIG:-${HOME}/.kube/config}
+        target: /root/.kube/config
+        read_only: true
+        bind:
+          create_host_path: true
     working_dir: /app
     environment:
       - CI=true
@@ -90,6 +97,7 @@ services:
       - DEER_FLOW_HOST_BASE_DIR=${DEER_FLOW_HOME}
       - DEER_FLOW_HOST_SKILLS_PATH=${DEER_FLOW_REPO_ROOT}/skills
       - DEER_FLOW_SANDBOX_HOST=host.docker.internal
+      - KUBECONFIG=/root/.kube/config
     env_file:
       - ../.env
     extra_hosts:
@@ -128,6 +136,13 @@ services:
         read_only: true
         bind:
           create_host_path: true
+      # Kubeconfig for Kubernetes MCP server (optional, mount if using k8s tools)
+      - type: bind
+        source: ${KUBECONFIG:-${HOME}/.kube/config}
+        target: /root/.kube/config
+        read_only: true
+        bind:
+          create_host_path: true
     environment:
       - CI=true
       - DEER_FLOW_HOME=/app/backend/.deer-flow
@@ -136,6 +151,7 @@ services:
       - DEER_FLOW_HOST_BASE_DIR=${DEER_FLOW_HOME}
       - DEER_FLOW_HOST_SKILLS_PATH=${DEER_FLOW_REPO_ROOT}/skills
       - DEER_FLOW_SANDBOX_HOST=host.docker.internal
+      - KUBECONFIG=/root/.kube/config
       # Disable LangSmith tracing — LANGSMITH_API_KEY is not required.
       # Set LANGCHAIN_TRACING_V2=true and LANGSMITH_API_KEY in .env to enable.
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}

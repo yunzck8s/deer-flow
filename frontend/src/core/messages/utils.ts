@@ -41,7 +41,7 @@ export function groupMessages<T>(
   // Keep the last occurrence so the most up-to-date content is shown.
   const seenIds = new Map<string, number>();
   for (let i = 0; i < messages.length; i++) {
-    const id = messages[i].id;
+    const id = messages[i]?.id;
     if (id) seenIds.set(id, i);
   }
   const deduped =

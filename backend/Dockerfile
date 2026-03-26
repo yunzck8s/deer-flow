@@ -22,6 +22,12 @@ COPY --from=docker:cli /usr/local/bin/docker /usr/local/bin/docker
 # Install uv from a pinned versioned image (avoids curl|sh from untrusted remote)
 COPY --from=ghcr.io/astral-sh/uv:0.7.20 /uv /uvx /usr/local/bin/
 
+# Pre-install MCP server packages at build time so containers start without network access.
+# kubernetes: install globally so the binary is available at /usr/local/bin/kubernetes-mcp-server
+# clickhouse: uv tool install pre-populates the tool cache used by uvx at runtime
+RUN npm install -g kubernetes-mcp-server@latest
+RUN uv tool install mcp-clickhouse
+
 # Set working directory
 WORKDIR /app
 

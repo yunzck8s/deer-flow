@@ -1,5 +1,33 @@
 {
   "mcpServers": {
+    "kubernetes": {
+      "enabled": false,
+      "type": "stdio",
+      "command": "kubernetes-mcp-server",
+      "args": [],
+      "env": {},
+      "description": "Kubernetes cluster management - pods, deployments, services, logs, exec. Pre-installed in Docker image via npm install -g kubernetes-mcp-server.",
+      "group": "kubernetes"
+    },
+    "clickhouse": {
+      "enabled": false,
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-clickhouse"
+      ],
+      "env": {
+        "CLICKHOUSE_HOST": "$CLICKHOUSE_HOST",
+        "CLICKHOUSE_PORT": "$CLICKHOUSE_PORT",
+        "CLICKHOUSE_USER": "$CLICKHOUSE_USER",
+        "CLICKHOUSE_PASSWORD": "$CLICKHOUSE_PASSWORD",
+        "CLICKHOUSE_DATABASE": "$CLICKHOUSE_DATABASE",
+        "CLICKHOUSE_SECURE": "false",
+        "CLICKHOUSE_VERIFY": "false"
+      },
+      "description": "ClickHouse database access. Pre-installed in Docker image via uv tool install mcp-clickhouse.",
+      "group": "clickhouse"
+    },
     "filesystem": {
       "enabled": false,
       "type": "stdio",

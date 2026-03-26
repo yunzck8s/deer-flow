@@ -98,6 +98,9 @@ services:
       - DEER_FLOW_HOST_SKILLS_PATH=${DEER_FLOW_REPO_ROOT}/skills
       - DEER_FLOW_SANDBOX_HOST=host.docker.internal
       - KUBECONFIG=/root/.kube/config
+      # MCP package mirrors — allow npx/uvx to install MCP servers in restricted networks
+      - NPM_CONFIG_REGISTRY=${NPM_REGISTRY:-https://registry.npmmirror.com}
+      - UV_INDEX_URL=${UV_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     env_file:
       - ../.env
     extra_hosts:
@@ -155,6 +158,9 @@ services:
       # Disable LangSmith tracing — LANGSMITH_API_KEY is not required.
       # Set LANGCHAIN_TRACING_V2=true and LANGSMITH_API_KEY in .env to enable.
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+      # MCP package mirrors — allow npx/uvx to install MCP servers in restricted networks
+      - NPM_CONFIG_REGISTRY=${NPM_REGISTRY:-https://registry.npmmirror.com}
+      - UV_INDEX_URL=${UV_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     env_file:
       - ../.env
     extra_hosts:

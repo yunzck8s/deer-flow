@@ -25,7 +25,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.7.20 /uv /uvx /usr/local/bin/
 # Pre-install MCP server packages at build time so containers start without network access.
 # kubernetes: install globally so the binary is available at /usr/local/bin/kubernetes-mcp-server
 # clickhouse: uv tool install pre-populates the tool cache used by uvx at runtime
-RUN npm install -g kubernetes-mcp-server@latest
+# Pin to last known-good version: v0.0.59+ sends pre-init notifications that break
+# the Python mcp client's session initialization (BrokenResourceError). Use a pinned
+# version confirmed compatible with the mcp protocol handshake.
+RUN npm install -g kubernetes-mcp-server@0.0.40
 RUN uv tool install mcp-clickhouse
 
 # Set working directory

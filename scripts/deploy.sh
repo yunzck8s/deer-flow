@@ -68,13 +68,18 @@ if [ -z "$DEER_FLOW_EXTENSIONS_CONFIG_PATH" ]; then
 fi
 
 if [ ! -f "$DEER_FLOW_EXTENSIONS_CONFIG_PATH" ]; then
-    if [ -f "$REPO_ROOT/extensions_config.json" ]; then
+    if [ -f "$REPO_ROOT/extensions_config.example.json" ]; then
+        cp "$REPO_ROOT/extensions_config.example.json" "$DEER_FLOW_EXTENSIONS_CONFIG_PATH"
+        echo -e "${GREEN}✓ Seeded extensions_config.example.json → $DEER_FLOW_EXTENSIONS_CONFIG_PATH${NC}"
+        echo -e "${YELLOW}⚠ extensions_config.json was seeded from the example template.${NC}"
+        echo "  Edit $DEER_FLOW_EXTENSIONS_CONFIG_PATH to configure MCP servers and skills."
+    elif [ -f "$REPO_ROOT/extensions_config.json" ]; then
         cp "$REPO_ROOT/extensions_config.json" "$DEER_FLOW_EXTENSIONS_CONFIG_PATH"
         echo -e "${GREEN}✓ Seeded extensions_config.json → $DEER_FLOW_EXTENSIONS_CONFIG_PATH${NC}"
     else
         # Create a minimal empty config so the gateway doesn't fail on startup
         echo '{"mcpServers":{},"skills":{}}' > "$DEER_FLOW_EXTENSIONS_CONFIG_PATH"
-        echo -e "${YELLOW}⚠ extensions_config.json not found, created empty config at $DEER_FLOW_EXTENSIONS_CONFIG_PATH${NC}"
+        echo -e "${YELLOW}⚠ extensions_config.example.json not found, created empty config at $DEER_FLOW_EXTENSIONS_CONFIG_PATH${NC}"
     fi
 else
     echo -e "${GREEN}✓ extensions_config.json: $DEER_FLOW_EXTENSIONS_CONFIG_PATH${NC}"

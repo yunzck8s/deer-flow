@@ -1,0 +1,4 @@
+name: knowledge-advisor
+description: "Retrieves fault postmortems, SOP runbooks, architecture docs, and API documentation from the knowledge base. Use when diagnosing issues, designing test plans, or answering questions about system architecture and historical incidents"
+tool_groups:
+  - ragflow

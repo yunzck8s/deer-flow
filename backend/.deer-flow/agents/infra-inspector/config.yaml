@@ -1,0 +1,5 @@
+name: infra-inspector
+description: "Inspects Kubernetes cluster health, pod status, resource usage, and middleware metrics via kubectl and ClickHouse"
+tool_groups:
+  - kubernetes
+  - clickhouse

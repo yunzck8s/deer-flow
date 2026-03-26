@@ -1,0 +1,4 @@
+name: trace-analyst
+description: "Analyzes distributed traces from SigNoz/ClickHouse to diagnose latency, errors, and service dependency issues"
+tool_groups:
+  - clickhouse

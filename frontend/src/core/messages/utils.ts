@@ -34,6 +34,21 @@ export function groupMessages<T>(
     return [];
   }
 
+  // Deduplicate messages by id — LangGraph streaming may deliver the same message
+  // twice (e.g. once as a partial chunk, once in the final values snapshot).
+  // DeepSeek also generates sequential tool_call_ids (e.g. clickhouse_run_select_query:5)
+  // that can repeat across turns, causing two messages to share the same id.
+  // Keep the last occurrence so the most up-to-date content is shown.
+  const seenIds = new Map<string, number>();
+  for (let i = 0; i < messages.length; i++) {
+    const id = messages[i].id;
+    if (id) seenIds.set(id, i);
+  }
+  const deduped =
+    seenIds.size < messages.length
+      ? messages.filter((msg, i) => !msg.id || seenIds.get(msg.id) === i)
+      : messages;
+
   const groups: MessageGroup[] = [];
 
   // Returns the last group if it can still accept tool messages
@@ -51,7 +66,7 @@ export function groupMessages<T>(
     return null;
   }
 
-  for (const message of messages) {
+  for (const message of deduped) {
     if (message.name === "todo_reminder") {
       continue;
     }

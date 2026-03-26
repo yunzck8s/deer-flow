@@ -6,6 +6,8 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from deerflow.agents.middlewares.loop_detection_middleware import (
     _HARD_STOP_MSG,
+    _STEP_HARD_STOP_MSG,
+    _STEP_WARN_MSG,
     LoopDetectionMiddleware,
     _hash_tool_calls,
 )
@@ -229,3 +231,109 @@ class TestLoopDetection:
 
         mw._apply(_make_state(tool_calls=call), runtime)
         assert "default" in mw._history
+
+
+class TestStepBudget:
+    def test_warn_at_step_limit(self):
+        """Should inject a step-budget warning at max_tool_steps_warn."""
+        mw = LoopDetectionMiddleware(
+            warn_threshold=100,
+            hard_limit=200,
+            max_tool_steps=10,
+            max_tool_steps_warn=8,
+        )
+        runtime = _make_runtime()
+
+        # 7 different calls — no warning yet
+        for i in range(7):
+            result = mw._apply(_make_state(tool_calls=[_bash_call(f"cmd_{i}")]), runtime)
+            assert result is None
+
+        # 8th call triggers step-budget warning
+        result = mw._apply(_make_state(tool_calls=[_bash_call("cmd_8")]), runtime)
+        assert result is not None
+        msgs = result["messages"]
+        assert len(msgs) == 1
+        assert isinstance(msgs[0], HumanMessage)
+        assert "STEP BUDGET WARNING" in msgs[0].content
+
+    def test_hard_stop_at_step_limit(self):
+        """Should force-stop after max_tool_steps total rounds."""
+        mw = LoopDetectionMiddleware(
+            warn_threshold=100,
+            hard_limit=200,
+            max_tool_steps=5,
+            max_tool_steps_warn=3,
+        )
+        runtime = _make_runtime()
+
+        # 4 different calls (warn fires at 3, then nothing until hard stop)
+        for i in range(4):
+            mw._apply(_make_state(tool_calls=[_bash_call(f"cmd_{i}")]), runtime)
+
+        # 5th call triggers hard stop
+        result = mw._apply(_make_state(tool_calls=[_bash_call("cmd_5")]), runtime)
+        assert result is not None
+        msgs = result["messages"]
+        assert len(msgs) == 1
+        assert isinstance(msgs[0], AIMessage)
+        assert msgs[0].tool_calls == []
+        assert _STEP_HARD_STOP_MSG in msgs[0].content
+
+    def test_step_budget_independent_per_thread(self):
+        """Step counters are tracked independently per thread."""
+        mw = LoopDetectionMiddleware(
+            warn_threshold=100,
+            hard_limit=200,
+            max_tool_steps=3,
+            max_tool_steps_warn=2,
+        )
+        runtime_a = _make_runtime("thread-A")
+        runtime_b = _make_runtime("thread-B")
+
+        # 2 calls on thread A — warn fires
+        mw._apply(_make_state(tool_calls=[_bash_call("cmd_0")]), runtime_a)
+        result = mw._apply(_make_state(tool_calls=[_bash_call("cmd_1")]), runtime_a)
+        assert result is not None and "STEP BUDGET" in result["messages"][0].content
+
+        # Thread B is still fresh
+        result = mw._apply(_make_state(tool_calls=[_bash_call("cmd_0")]), runtime_b)
+        assert result is None
+
+    def test_step_count_reset_clears(self):
+        """reset() should clear step counters."""
+        mw = LoopDetectionMiddleware(
+            warn_threshold=100,
+            hard_limit=200,
+            max_tool_steps=3,
+            max_tool_steps_warn=2,
+        )
+        runtime = _make_runtime()
+
+        mw._apply(_make_state(tool_calls=[_bash_call("cmd_0")]), runtime)
+        mw._apply(_make_state(tool_calls=[_bash_call("cmd_1")]), runtime)
+
+        mw.reset()
+
+        # After reset, step count starts fresh — no warning on first call
+        result = mw._apply(_make_state(tool_calls=[_bash_call("cmd_0")]), runtime)
+        assert result is None
+
+    def test_step_budget_evicted_with_thread(self):
+        """Step count should be evicted together with history on LRU eviction."""
+        mw = LoopDetectionMiddleware(
+            warn_threshold=100,
+            hard_limit=200,
+            max_tool_steps=5,
+            max_tool_steps_warn=4,
+            max_tracked_threads=2,
+        )
+        for i in range(2):
+            rt = _make_runtime(f"thread-{i}")
+            mw._apply(_make_state(tool_calls=[_bash_call("ls")]), rt)
+
+        # Adding a 3rd thread evicts thread-0
+        rt_new = _make_runtime("thread-new")
+        mw._apply(_make_state(tool_calls=[_bash_call("ls")]), rt_new)
+
+        assert "thread-0" not in mw._step_counts

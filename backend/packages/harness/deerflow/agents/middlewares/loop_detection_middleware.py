@@ -10,6 +10,11 @@ Detection strategy:
      "you are repeating yourself — wrap up" system message (once per hash).
   4. If it appears >= hard_limit times, strip all tool_calls from the
      response so the agent is forced to produce a final text answer.
+
+  Additionally, track total tool-call rounds per thread to catch
+  "different tools but never-ending" loops that the hash-based check misses:
+  5. If total rounds >= max_tool_steps_warn, inject a step-budget warning.
+  6. If total rounds >= max_tool_steps, force-stop regardless of call content.
 """
 
 import hashlib
@@ -31,6 +36,8 @@ _DEFAULT_WARN_THRESHOLD = 3  # inject warning after 3 identical calls
 _DEFAULT_HARD_LIMIT = 5  # force-stop after 5 identical calls
 _DEFAULT_WINDOW_SIZE = 20  # track last N tool calls
 _DEFAULT_MAX_TRACKED_THREADS = 100  # LRU eviction limit
+_DEFAULT_MAX_TOOL_STEPS = 200  # force-stop after this many total tool-call rounds
+_DEFAULT_MAX_TOOL_STEPS_WARN = 160  # warn when approaching the total step limit
 
 
 def _hash_tool_calls(tool_calls: list[dict]) -> str:
@@ -72,9 +79,29 @@ _HARD_STOP_MSG = (
     "Producing final answer with results collected so far."
 )
 
+_STEP_WARN_MSG = (
+    "[STEP BUDGET WARNING] You have made a large number of tool calls. "
+    "Stop exploring and produce your final answer now using the information already collected. "
+    "If you cannot complete the task fully, summarize what you have accomplished so far."
+)
+
+_STEP_HARD_STOP_MSG = (
+    "[FORCED STOP] Total tool-call steps exceeded the safety limit. "
+    "Producing final answer with results collected so far."
+)
+
 
 class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
     """Detects and breaks repetitive tool call loops.
+
+    Provides two independent safety mechanisms:
+
+    1. **Hash-based loop detection**: Catches identical tool call sets repeating.
+       Warns after `warn_threshold` identical calls; force-stops after `hard_limit`.
+
+    2. **Total step budget**: Catches "different tools but never-ending" loops.
+       Warns after `max_tool_steps_warn` total tool-call rounds; force-stops
+       after `max_tool_steps` regardless of call content.
 
     Args:
         warn_threshold: Number of identical tool call sets before injecting
@@ -85,6 +112,11 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
             Default: 20.
         max_tracked_threads: Maximum number of threads to track before
             evicting the least recently used. Default: 100.
+        max_tool_steps: Total tool-call rounds per thread before force-stopping.
+            Catches open-ended loops that never repeat the same call.
+            Default: 200.
+        max_tool_steps_warn: Total tool-call rounds before injecting a
+            step-budget warning. Default: 160.
     """
 
     def __init__(
@@ -93,16 +125,22 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
         hard_limit: int = _DEFAULT_HARD_LIMIT,
         window_size: int = _DEFAULT_WINDOW_SIZE,
         max_tracked_threads: int = _DEFAULT_MAX_TRACKED_THREADS,
+        max_tool_steps: int = _DEFAULT_MAX_TOOL_STEPS,
+        max_tool_steps_warn: int = _DEFAULT_MAX_TOOL_STEPS_WARN,
     ):
         super().__init__()
         self.warn_threshold = warn_threshold
         self.hard_limit = hard_limit
         self.window_size = window_size
         self.max_tracked_threads = max_tracked_threads
+        self.max_tool_steps = max_tool_steps
+        self.max_tool_steps_warn = max_tool_steps_warn
         self._lock = threading.Lock()
         # Per-thread tracking using OrderedDict for LRU eviction
         self._history: OrderedDict[str, list[str]] = OrderedDict()
         self._warned: dict[str, set[str]] = defaultdict(set)
+        # Per-thread total tool-call round counters
+        self._step_counts: dict[str, int] = {}
 
     def _get_thread_id(self, runtime: Runtime) -> str:
         """Extract thread_id from runtime context for per-thread tracking."""
@@ -119,6 +157,7 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
         while len(self._history) > self.max_tracked_threads:
             evicted_id, _ = self._history.popitem(last=False)
             self._warned.pop(evicted_id, None)
+            self._step_counts.pop(evicted_id, None)
             logger.debug("Evicted loop tracking for thread %s (LRU)", evicted_id)
 
     def _track_and_check(self, state: AgentState, runtime: Runtime) -> tuple[str | None, bool]:
@@ -150,6 +189,10 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
                 self._history[thread_id] = []
                 self._evict_if_needed()
 
+            # Increment total step counter
+            step_count = self._step_counts.get(thread_id, 0) + 1
+            self._step_counts[thread_id] = step_count
+
             history = self._history[thread_id]
             history.append(call_hash)
             if len(history) > self.window_size:
@@ -158,6 +201,32 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
             count = history.count(call_hash)
             tool_names = [tc.get("name", "?") for tc in tool_calls]
 
+            # --- Check 1: total step budget ---
+            if step_count >= self.max_tool_steps:
+                logger.error(
+                    "Total tool-call step limit reached — forcing stop",
+                    extra={
+                        "thread_id": thread_id,
+                        "step_count": step_count,
+                        "max_tool_steps": self.max_tool_steps,
+                        "tools": tool_names,
+                    },
+                )
+                return _STEP_HARD_STOP_MSG, True
+
+            if step_count == self.max_tool_steps_warn:
+                logger.warning(
+                    "Approaching total tool-call step limit — injecting warning",
+                    extra={
+                        "thread_id": thread_id,
+                        "step_count": step_count,
+                        "max_tool_steps": self.max_tool_steps,
+                        "tools": tool_names,
+                    },
+                )
+                return _STEP_WARN_MSG, False
+
+            # --- Check 2: identical call repetition ---
             if count >= self.hard_limit:
                 logger.error(
                     "Loop hard limit reached — forcing stop",
@@ -198,7 +267,7 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
             last_msg = messages[-1]
             stripped_msg = last_msg.model_copy(update={
                 "tool_calls": [],
-                "content": (last_msg.content or "") + f"\n\n{_HARD_STOP_MSG}",
+                "content": (last_msg.content or "") + f"\n\n{warning}",
             })
             return {"messages": [stripped_msg]}
 
@@ -227,6 +296,8 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
             if thread_id:
                 self._history.pop(thread_id, None)
                 self._warned.pop(thread_id, None)
+                self._step_counts.pop(thread_id, None)
             else:
                 self._history.clear()
                 self._warned.clear()
+                self._step_counts.clear()
